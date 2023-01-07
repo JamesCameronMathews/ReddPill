@@ -1,0 +1,458 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+  title: "ReddPill"
+  author: "James Mathews"
+  date: '2023-01-04'
+  df_print: kable
+  number_sections: yes
+  toc: yes
+  fig_caption: yes
+  in_header: preamble.tex
+  fontsize: 11pt
+include-before: '`\newpage{}`{=latex}'
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{siunitx}
+bibliography: ReddPill_bib.bib
+
+---
+
+```{r setup, include=FALSE}
+# Knitr and kable options
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align="center", out.width="80%")
+options(kableExtra.latex.load_packages = FALSE)
+
+# Open required packages
+library(tidyverse)
+library(tidytext)
+library(syuzhet)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(caret)
+library(RedditExtractoR)
+library(kableExtra)
+library(stringr)
+library(textclean)
+library(gbm)
+library(e1071)
+library(gtrendsR)
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(tidytext)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(syuzhet)) install.packages("syuzhet", repos = "http://cran.us.r-project.org")
+if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(RedditExtractoR)) install.packages("RedditExtractoR", repos = "http://cran.us.r-project.org")
+if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
+if(!require(stringr)) install.packages("stringr", repos = "http://cran.us.r-project.org")
+if(!require(textclean)) install.packages("textclean", repos = "http://cran.us.r-project.org")
+if(!require(gbm)) install.packages("gbm", repos = "http://cran.us.r-project.org")
+if(!require(e1071)) install.packages("e1071", repos = "http://cran.us.r-project.org") #SVM modelling with e1071 package
+if(!require(gtrendsR)) install.packages("gtrendsR", repos = "http://cran.us.r-project.org")
+
+# Create ggplot2 theme
+plot_theme <- theme(plot.caption = element_text(size = 11, face = "italic"), axis.title = element_text(size = 11))
+
+```
+
+**ReddPill: A machine-learning framework for analysing and predicting user attitudes toward medicines using the social media platform Reddit**  
+
+
+Author: James Mathews  
+
+Date: 04-Jan-2022  
+
+Course: Harvard edX - Data Science Professional Certificate  
+
+Project: Capstone - Choose Your Own  
+
+
+\newpage
+
+**Introduction**  
+
+Data scraping and machine learning techniques offer innovative new ways to understand public attitudes toward medicines. A 2022 study by Spadaro et al. extracted data from the social media website Reddit and analysed this data to provide insights into current trends in opiate addiction [@doi:10.1080/15563650.2022.2032730]. This current project planned to build on these ideas, investigating the feasibility of using machine learning techniques to understand and predict user attitudes toward a medicine on the Reddit platform.
+
+As a test case, the drug pregabalin (originally patented as Lyrica) was chosen. Pregabalin is a GABA analogue used as an anticonvulsant, anxiolytic, analgesic, and off-label in other indications [@abai2019statpearls]. Due to its atypical mechanism of action and relatively recent introduction to the market, questions still remain as to public attitudes toward and recreational use of the drug. Insights gathered by this analysis could suggest opportunities for public health interventions, physician education, or targeted digital campaigns. 
+
+The report was compiled using R Markdown in [RStudio](https://rstudio.com/products/rstudio/), an integrated development environment for programming in R, a language and software environment for statistical computing [@Rall].
+
+
+
+```{r data-extraction, echo=FALSE}
+# Get and set WD
+setwd(getwd())
+
+# Load clean dataset
+load(file="./ReddPill_data.RData")
+
+# Establish ggplot theme
+plot_theme <- theme(plot.caption = element_text(size = 11, face = "italic"), axis.title = element_text(size = 11))
+
+# Pushishift data extraction attempt, currently non-functional due to API instability, if attempted would also require post-processing to work consistently with the remainder of the code in this report (attempt with caution)
+# library(jsonlite)
+# if(!require("jsonlite")) install.packages("jsonlite", repos = "http://cran.us.r-project.org")
+
+# dat <- fromJSON(url("https://api.pushshift.io/reddit/submission/search?html_decode=true&after=1609430400&before=1612108800&q=pregabalin&size=1000"),flatten = T)
+# dat <- dat %>% rbind(fromJSON(url("https://api.pushshift.io/reddit/submission/search?html_decode=true&after=1612108800&before=1614528000&q=pregabalin&size=1000"),flatten = T))
+# dat <- dat %>% rbind(fromJSON(url("https://api.pushshift.io/reddit/submission/search?html_decode=true&after=1614528000&before=1617206400&q=pregabalin&size=1000"),flatten = T))
+# dat <- dat %>% rbind(fromJSON(url("https://api.pushshift.io/reddit/submission/search?html_decode=true&after=1617206400&before=1619798400&q=pregabalin&size=1000"),flatten = T))
+# dat <- dat %>% rbind(fromJSON(url("https://api.pushshift.io/reddit/submission/search?html_decode=true&after=1619798400&before=1622476800&q=pregabalin&size=1000"),flatten = T))
+# dat <- dat %>% rbind(fromJSON(url("https://api.pushshift.io/reddit/submission/search?html_decode=true&after=1622476800&before=1625068800&q=pregabalin&size=1000"),flatten = T))
+# dat <- dat %>% rbind(fromJSON(url("https://api.pushshift.io/reddit/submission/search?html_decode=true&after=1625068800&before=1627747200&q=pregabalin&size=1000"),flatten = T))
+# dat <- dat %>% rbind(fromJSON(url("https://api.pushshift.io/reddit/submission/search?html_decode=true&after=1627747200&before=1630425600&q=pregabalin&size=1000"),flatten = T))
+# dat <- dat %>% rbind(fromJSON(url("https://api.pushshift.io/reddit/submission/search?html_decode=true&after=1630425600&before=1633017600&q=pregabalin&size=1000"),flatten = T))
+# dat <- dat %>% rbind(fromJSON(url("https://api.pushshift.io/reddit/submission/search?html_decode=true&after=1633017600&before=1635696000&q=pregabalin&size=1000"),flatten = T))
+
+
+# Extract reddit posts with Reddit ExtractoR - run this function from .R file or load provided dataset, gives 429 Error when used inline with .Rmd file
+# dat <- RedditExtractoR::find_thread_urls(
+# keywords = "pregabalin", sort_by = "top", period = "year")
+
+```
+
+\newpage
+**Methods - Part 1**
+
+*Data scraping*  
+
+Generating a significantly sized dataset from Reddit proved to be a great obstacle in this project. To this end, several approaches were explored. The first attempt invoked functions from the minimalist Reddit scraping package RedditExtractoR by Ivan Rivera [@RedditExtractoR]. RedditExtractoR makes use of Reddit's native App Program Interface (API) to extract and parse formatted data directly into R. Though convenient, this approach is constrained by the Reddit API's configuration, which imposes a limit to the number of posts that can be retrieved. A dataset consisting of `r nrow(dat)` Reddit submissions sorted by top rating from the previous year was extracted in this manner. Because of the above mentioned API constraints, user data could not be extracted concurrently in an automated manner using RedditExtractoR.
+
+Alternative data scraping methods were explored so as to generate a more appropriate dataset for analysis. Spedaro et al.'s data extraction used the Python Reddit API Wrapper (PRAW) tool to extract more than 2*10^5 reddit posts, and so these methods were replicated. Unfortunately, since Spedaro's work, the Reddit API has been modified to dissallow iterative CloudSearch based requests that might yield a substantial dataset.
+
+Another option for data scraping relied on the third party Reddit archiving service Pushshift.io, maintained by the Reddit user /u/stuck_in_the_matrix [@DBLP:journals/corr/abs-2001-08435]. Pushshift.io offers an alternative API to extract potentially unlimited Reddit content. The PRAW based approach mentioned above was modified to direct toward the Pushshift.io API rather than Reddit and configured to download `r `1*10^4` submissions from Reddit. However, due to instability with Pushshift.io's API, attempts to extract data in this manner were not successful. An R based approach to access Pushshift.io's API was also tested tested without success (commented out in the code of this report). A copy of the Python script mentioned is avaialble from this writer's Github account. An example dataset produced from RedditExtractor is also available at Github.
+
+\newpage
+
+**Exploratory analysis** 
+
+The small dataset that could be extracted was analysed for insights and to select a suitable machine learning approach. This dataset consisted of `r nrow(dat)` rows describing the variables `r colnames(dat)`. Each row in the dataset represents one submission (comments on other submissions are excluded) to any board on Reddit that includes the word "pregabalin" in the text or title. Number of comments on each post was a variable included in final analysis but not explored here.
+
+
+*Exploratory analysis: Subreddit*  
+
+Reddit is organised into many different messageboards called subreddits. Each subreddit is a community dedicated to discussion of a particular topic. Figure 1 shows the 25 most common subreddits found in the dataset, with the most popular being `r dat %>% count(subreddit) %>% arrange(desc(n)) %>% top_n(1) %>% pull(subreddit)`. Already, it is clear from the nature of these subreddits that a majority of pregabalin discussions on the platform relate to recreational use and addiction. A minority relate to discussion of legitimate medical use.
+
+```{r top-subreddits, echo=FALSE}
+# Plot by subreddit
+dat %>% 
+  count(subreddit) %>%
+  slice_max(n, n=25) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = reorder(subreddit, -n), y = n)) +
+  xlab("Subreddit") +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+*Exploratory analysis: Date*  
+
+The "date_utc" column in the scraped dataset represents the date on which each submission was originally made. In order to effectively visualise this information, date was rounded to the nearest week using the lubridate package and frequencies plotted (Figure 2). Submissions from later in the year were more likely to be included in the dataset, and it is not entirely clear why. A cursory analysis of Google search data using the gtrendsR package (Figure 3) suggests that this may correlate with a global pattern of rising interest in pregabalin [@gtrendsR].
+
+
+```{r plot-date, echo=FALSE}
+# Convert date_utc from character to date
+dat <- dat %>%
+  mutate(date = as_datetime(date_utc))
+
+# Round to the nearest week  
+dat$date <- round_date(dat$date, unit = "month")
+
+#Plot date
+dat %>%
+  count(date) %>%
+  ggplot(aes(x=date, y=n)) +
+  geom_line() +
+  labs(x = "Date", y = "No. of submissions") + plot_theme
+```
+```{r google-trends, echo=FALSE}
+
+# Plot Google Trends data for pregabalin
+trend <- gtrends("pregabalin", time = "today 12-m")
+ 
+data.frame(trend$interest_over_time) %>%
+  ggplot(aes(x=trend$interest_over_time$date, y=trend$interest_over_time$hits )) +
+  geom_line() +
+  labs(x = "Date", y = "Search hits") + plot_theme
+
+```
+
+```{r text-processing, echo=FALSE}
+# Append title to text
+dat <- dat %>% mutate(full_text = paste(title, "-", text ))
+
+# Perform text cleaning
+dat <- dat %>% 
+  mutate(text_clean = full_text %>% 
+           replace_non_ascii() %>% 
+           replace_html(symbol = F) %>% # remove html tag
+           str_replace_all("[0-9]", " ") %>% 
+           str_replace_all("[-|]", " ") %>% # replace "-" with space
+           tolower() %>% #lowercase
+           replace_symbol() %>%
+           replace_contraction() %>% 
+           replace_word_elongation() %>%  # lengthen shortened word
+           str_replace_all("[[:punct:]]", " ") %>% # remove punctuation
+           str_replace_all(" dr ", " doctor ") %>% 
+           make_plural() %>%
+           str_replace_all(" s ", " ") %>%  
+           str_squish() %>% # remove double whitespace
+           str_trim() # remove whitespace at the start and end of the text
+  )
+
+# Remove temporary column
+dat <- dat %>% select(-full_text)
+```
+
+
+*Exploratory analysis: Title and Text*  
+
+The title and text fields of the dataset contain the writing of Redditors that will be used to drive machine learning techniques in this project. In order to make this information more amenable to analysis, pre-processing was performed with the tidytext package. First the title and text of each post was concatenated. HTML tags, numbers, and symbols were removed. Shortened words were then replaced and whitespace was trimmed. The resulting text had a mean length of `r mean(nchar(dat$text_clean))` characters with a minimum of `r min(nchar(dat$text_clean))` and a maximum of `r max(nchar(dat$text_clean))`. 
+
+```{r sentiment-analysis, echo=FALSE}
+# Calculate sentiment score and plot sentiment distribution
+dat <- dat %>% 
+  mutate(sent = get_sentiment(text_clean, method="afinn"))
+
+dat %>%
+  ggplot(aes(x=sent)) +
+  geom_histogram(bins=30, color = I("black")) +
+  labs(x = "Sentiment", y = "No. of submissions") + plot_theme
+```
+
+In order to understand user attitudes toward pregabalin, a sentiment score was calculated for the cleaned text of each post. The syuzhet package and the afinn sentiment library were used to this end and the distribution of sentiments by post plotted as a histogram (Figure 3) [@syuzhet]. The mean sentiment for all posts was `r mean(dat$sent)`, overwhelmingly negative. There were outlying posts with a very positive sentiment score (>50) or overwhelmingly negative score (<-50). Sentiment distribution broadly resembled a normal (Gaussian) distribution.
+
+\newpage
+**Methods - Part 2**  
+
+*Machine learning: GBM*  
+
+Two different machine learning algorithms were implemented in an attempt to predict sentiment outcomes on the basis of other Reddit post characteristics. The first algorithm selected was Stochasic Gradient-Boosted Tree Modelling (GBM) using the gbm package [@friedman2001greedy]. GBM aims to create a function that can predict the value of a variable by fitting a function over observations of that variable and iterating this function, each time adding further terms in an attempt to minimise error loss.  GBM was chosen for this application because it is suitable to work with large depth factors (eg. subreddit) as predictors.
+
+```{r gbm, echo=FALSE, message = FALSE, results='hide'}
+# Convert strings to factors
+col_names <- names(dat[1:9])
+dat[col_names] <- lapply(dat[col_names] , factor)
+
+# Partition data into test and train sets
+set.seed(1)
+test_index <- createDataPartition(y = dat$sent, times = 1, p = 0.5, list = FALSE)
+train <- dat[-test_index,]
+test <- dat[test_index,]
+
+
+# Perform gbm training
+simple_model_gbm <- gbm(sent ~ date + comments + subreddit, data=train, cv = 100)
+
+# See results
+y_pred = predict(simple_model_gbm, newdata = test)
+
+simple_rmse_gbm <- RMSE(y_pred, test$sent)
+```
+
+First, the dataset was partitioned into testing and training sets, with the training set consisting 80% of the data - a partition rate dictated by the small size of the overall dataset. A simple instance of gbm with default parameters was called after first converting character vectors to factors. Root Mean SquareError (RMSE) was used to measure model accuracy in all cases. The RMSE achieved with this approach was `r min(simple_model_gbm$cv.error)`, indicating further optimisation was required.
+
+On consulting documentation for the gbm package, a number of adjustments were made in order to optimise the algorithm. For prediction over a small sample size with few predictors, interaction depth and minimum numver of observations per node were both lowered. The gm.perf function was called to estimate the optimal number of trees (Figure 4). Then, a grid of different shrinkage (learning rate) values were tested. 
+
+```{r gbm-optimisation, echo=FALSE, message = FALSE, results='hide',fig.keep='all'}
+# plot error curve
+gbm.perf(simple_model_gbm, method = "OOB")
+
+# find index for number trees with minimum CV error
+best <- which.min(simple_model_gbm$cv.error)
+
+# get MSE and compute RMSE
+sqrt(simple_model_gbm$cv.error[best])
+
+# Creat hyperparameter tuning grid for GBM
+hyper_grid_gbm <- expand.grid(
+  learning_rate = c(0.3, 0.1, 0.05, 0.01, 0.005),
+  RMSE = NA,
+  trees = NA,
+  time = NA
+)
+
+# execute grid search
+for(i in seq_len(nrow(hyper_grid_gbm))) {
+
+  # fit gbm
+  set.seed(123)  # for reproducibility
+  train_time <- system.time({
+    m <- gbm(
+      formula = sent ~ date + comments + subreddit,
+      data = train,
+      distribution = "gaussian",
+      n.trees = min(simple_model_gbm$cv.error), 
+      shrinkage = hyper_grid_gbm$learning_rate[i], 
+      interaction.depth = 3, 
+      n.minobsinnode = 10,
+      cv.folds = 10 
+   )
+  })
+  
+  # add SSE, trees, and training time to results
+  hyper_grid_gbm$RMSE[i]  <- sqrt(min(m$cv.error))
+  hyper_grid_gbm$trees[i] <- which.min(m$cv.error)
+  hyper_grid_gbm$time[i]  <- train_time[["elapsed"]]
+
+}
+```
+
+*Machine Learning: SVM*  
+
+Support Vector Machines (SVMs) are similar to GBM models in that they are tree based supervised learning models that are suitable for classifying according to factor variables. As opposed to GBM, SVM models applying decision trees to directly categorise datapoints rather than fit a function to describe them. A simple SVM model was first attempted with default parameters using the e1071 package [@cortes1995support].
+
+```{r svm-optimisation, echo=FALSE}
+# Train a simple SVM model
+simple_model_svm <- svm(sent ~ date + comments + subreddit, dat=train)
+
+# Create hyperparameter tune grid for SVM
+hyper_grid_svm <- expand.grid(
+  gamma = c(0.3, 0.1, 0.05, 0.01),
+  cost = c(10, 100, 1000, 10000),
+  RMSE = NA,
+  time = NA
+)
+
+# Create a function for training SVM model
+# execute grid search
+for(i in seq_len(nrow(hyper_grid_svm))) {
+set.seed(123)  # for reproducibility
+  train_time <- system.time({
+   ## train SVM model 
+    m <- svm( 
+        sent ~ date + comments + subreddit, 
+        data = train,
+        cost = hyper_grid_svm$cost[i], 
+        gamma = hyper_grid_svm$gamma[i], 
+        type = "eps-regression", 
+        kernel = "radial")
+})
+
+  # add RMSE and training time to results
+  hyper_grid_svm$RMSE[i]  <- sqrt(mean(m$residuals^2))
+  hyper_grid_svm$time[i]  <- train_time[["elapsed"]]
+}
+
+```
+\newpage
+**Results**  
+
+*Algorithm 1: Simple GBM*  
+
+The simple GBM model developed was applied to the test dataset and an RMSE of `r simple_rmse_gbm` was calculated. This indicated a very poorly algorithm, and so steps were taken to optimise the model. 
+
+```{r simple-gbm-results, echo=FALSE}
+# Fit model onto test data
+y_pred = predict(simple_model_gbm, newdata = test)
+
+# Predict RMSE
+simple_rmse_gbm <- RMSE(y_pred, test$sent)
+
+# Add results to final result table
+rmse_results <- data.frame(Method = "Simple GBM", RMSE = simple_rmse_gbm)
+rmse_results %>%
+  kable(align = 'lrr', booktabs = T, format = "latex") %>%
+  kable_styling(full_width = FALSE, position = "center", latex_options = "hold_position")
+```
+
+*Algorithm 2: Optimised GBM*  
+
+The final optimised GBM model used `r min(simple_model_gbm$cv.error)` trees and a learning rate of `r hyper_grid_gbm$learning_rate[which.min(hyper_grid_gbm$RMSE)]`. When this algorithm was used to predict sentiment scores in the test dataset, an RMSE of `r ` was achieved.
+```{r optimised-gbm-results, echo=FALSE, message = FALSE}
+# Fit optimised GBM model
+optimised_model_gbm <- gbm(
+      formula = sent ~ date + comments + subreddit,
+      data = train,
+      distribution = "gaussian",
+      n.trees = min(simple_model_gbm$cv.error), 
+      shrinkage = hyper_grid_gbm$learning_rate[which.min(hyper_grid_gbm$RMSE)], 
+      interaction.depth = 3, 
+      n.minobsinnode = 10,
+      cv.folds = 10 
+)
+
+# Use model onto test data
+y_pred = predict(optimised_model_gbm, newdata = test)
+
+# Predict RMSE
+optimised_rmse_gbm <- RMSE(y_pred, test$sent)
+
+# Add results to final result table
+rmse_results <- rmse_results %>% rbind(c("Optimised GBM", optimised_rmse_gbm))
+rmse_results %>%
+  kable(align = 'lrr', booktabs = T, format = "latex") %>%
+  kable_styling(full_width = FALSE, position = "center", latex_options = "hold_position")
+```
+
+```{r simple-svm-results, echo=FALSE, message = FALSE}
+# Use simple SVM model on test data
+y_pred = predict(simple_model_svm, newdata = test)
+
+# Predict RMSE
+simple_rmse_svm <- RMSE(y_pred, test$sent)
+```
+
+*Algorithm 3: Simple SVM*  
+
+As an alternative to GBM, an SVM model was also explored for its suitability to predict sentiment of posts. Before optimisation, this SVM model returned an RMSE of `r simple_rmse_svm`. Further optimisation was clearly necessary.
+
+```{r simple-svm-results-2, echo=FALSE}
+# Add results to final result table
+rmse_results <- rmse_results %>% rbind(c("Simple SVM", simple_rmse_svm))
+rmse_results %>%
+  kable(align = 'lrr', booktabs = T, format = "latex") %>%
+  kable_styling(full_width = FALSE, position = "center", latex_options = "hold_position")
+```
+
+```{r optimised-svm-results,  echo=FALSE, message = FALSE, warning= FALSE, results='hide',fig.keep='all'}
+# Plot SVM optimisation results
+hyper_grid_svm %>% 
+  ggplot(aes(x=gamma, y=RMSE))+
+  geom_line()+
+  facet_grid(rows=vars(cost), labeller = label_both)
+  plot_theme
+
+# Fit optimised SVM model
+optimised_model_svm <- svm( 
+        sent ~ date + comments + subreddit, 
+        data = train,
+        cost = hyper_grid_svm$cost[which.min(hyper_grid_svm$RMSE)], 
+        gamma = hyper_grid_svm$gamma[which.min(hyper_grid_svm$RMSE)], 
+        type = "eps-regression", 
+        kernel = "radial")
+
+# Use model onto test data
+y_pred = predict(optimised_model_svm, newdata = test)
+
+# Predict RMSE
+optimised_rmse_svm <- RMSE(y_pred, test$sent)
+```
+
+*Algorithm 4: Optimised SVM model*  
+
+Optimisation of the aforementioned SVM model was performed using a tuning grid of different values for the parameters cost and gamma (Figure 6). The optimal value for gamma was `r hyper_grid_svm$gamma[which.min(hyper_grid_svm$RMSE)]` and for cost was `r hyper_grid_svm$cost[which.min(hyper_grid_svm$RMSE)]`. When the optimised model was used to predict the sentiment of the test set, an RMSE of `r optimised_rmse_svm` was achieved.
+
+```{r optimised-svm-results-2, echo=FALSE}
+# Add results to final result table
+rmse_results <- rmse_results %>% rbind(c("Optimised SVM", optimised_rmse_svm))
+rmse_results %>%
+  kable(align = 'lrr', booktabs = T, format = "latex") %>%
+  kable_styling(full_width = FALSE, position = "center", latex_options = "hold_position")
+```
+\newpage
+**Conclusion**  
+
+This project aimed to extract data from the social networking site Reddit and use machine learning to contextually predict post sentiment toward a particular medicine, with the GABA analogue pregabalin taken as a test case. While it was easy to extract a small quantity of data from Reddit, efforts to scrape large datasets were confounded by restrictions on the site's API that limited how much data would be sent. Instability of the API hosted by third-party archiving service pushshift.io meant that this was not a viable alternative datasource. Nevertheless, analysis and machine learning were applied to a small dataset.
+
+Analysis of Reddit discussions relating to the drug pregabalin were illuminating. It was clear that pregabalin was predominantly discussed in the context of recreational use and addiction. This fact may come as a surprise to prescribers, since the consensus in the medical literature is that pregabalin's abuse potential is relatively low [@PMID:24849194]. Perhaps unsurprisingly given the context of many pregabalin discussions, sentiment analysis of text revealed that users felt on average very negatively toward the drug. Interestingly, aggregations of posts were observed to have either a very positive or a very negative sentiment, suggesting that the Reddit community is polarised in its attitude.
+
+Two different machine learning approaches were trialed in order to contextually predict the sentiment of Reddit posts that mentioned the drug pregabalin. A GBM algorithm was first trialed that, even after optimisation, showed fairly poor predictive power for this dataset. An SVM model was instead trialled and optimised, resulting in no significant improvement over GBM. Nevertheless, if more detailed realtime data from Reddit became available, the approaches tested in this project could be a powerful framework for understanding and predicting user attitudes to medicines.
+\newpage
+**References**
